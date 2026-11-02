@@ -1,111 +1,90 @@
 # GO_HW_2
 
-Два сервиса в одном репозитории: **Gateway** (HTTP-шлюз) и **Ledger** (учёт транзакций и бюджетов в памяти).
+**Gateway** — HTTP-API для клиентов. **Ledger** — доменная логика, PostgreSQL и Redis. Gateway импортирует пакет `ledger/ledger`: те же эндпоинты, что в ДЗ 5, но данные хранятся в БД и переживают перезапуск; сводные отчёты кешируются в Redis.
+
+Подробнее: [gateway/README.md](gateway/README.md), [ledger/README.md](ledger/README.md).
 
 ## Требования
 
-- Go 1.21+ (или любая актуальная версия с поддержкой modules)
+- Go 1.21+
+- PostgreSQL, Redis
+- [Goose](https://github.com/pressly/goose) для миграций
+
+## Быстрый старт
+
+```powershell
+docker compose up -d
+go install github.com/pressly/goose/v3/cmd/goose@latest
+
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:5432/cashapp?sslmode=disable"
+$env:REDIS_ADDR = "localhost:6379"
+
+cd ledger
+goose -dir ./migrations postgres $env:DATABASE_URL up
+go run .
+```
+
+В другом терминале:
+
+```powershell
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:5432/cashapp?sslmode=disable"
+$env:REDIS_ADDR = "localhost:6379"
+cd gateway
+go run .
+```
+
+### Миграции
+
+```powershell
+goose -dir ./ledger/migrations postgres $env:DATABASE_URL up
+goose -dir ./ledger/migrations postgres $env:DATABASE_URL down
+```
+
+Таблицы: `budgets` (категория, лимит), `expenses` (транзакции).
+
+### Переменные окружения
+
+- **PostgreSQL:** `DATABASE_URL` или `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME` (по умолчанию `localhost:5432`, `postgres`/`postgres`, БД `cashapp`, `sslmode=disable`).
+- **Redis:** `REDIS_ADDR` (`localhost:6379`), `REDIS_DB` (`0`), `REDIS_PASSWORD` (опционально).
+
+## Gateway — эндпоинты
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/transactions` | Создать транзакцию → таблица `expenses` |
+| `GET` | `/api/transactions` | Список из БД |
+| `POST` | `/api/budgets` | UPSERT бюджета → таблица `budgets` |
+| `GET` | `/api/budgets` | Список (кеш Redis ~20 с) |
+| `GET` | `/api/reports/summary?from=&to=` | Отчёт по категориям (кеш Redis 30 с) |
+
+Примеры:
+
+```powershell
+curl.exe -X POST http://localhost:8080/api/budgets -H "Content-Type: application/json" -d "{\"category\":\"food\",\"limit\":5000}"
+curl.exe -X POST http://localhost:8080/api/transactions -H "Content-Type: application/json" -d "{\"amount\":450,\"category\":\"food\",\"description\":\"lunch\",\"date\":\"2025-09-10\"}"
+curl.exe http://localhost:8080/api/transactions
+curl.exe "http://localhost:8080/api/reports/summary?from=2025-01-01&to=2025-12-31"
+```
+
+Второй подряд `GET /api/reports/summary` с теми же датами обслуживается из Redis (cache hit). После перезапуска Gateway данные остаются в PostgreSQL.
 
 ## Тесты
 
-В корне репозитория настроен `go.work` для модулей `gateway` и `ledger`. Unit-тесты домена — `ledger/ledger/ledger_test.go`, интеграционные HTTP-тесты — `gateway/internal/api/handlers_test.go`. Перед тестами состояние in-memory сбрасывается через `ledger.Reset()`.
+Нужны PostgreSQL и Redis (те же `DATABASE_URL` / `REDIS_ADDR`). Интеграционные тесты пропускаются, если БД недоступна.
 
 ```powershell
-cd D:\Учеба\GO\GO_HW_2
 go test ./gateway/internal/api ./ledger/ledger -cover -coverprofile=cover.out
 go tool cover -func=cover.out
 go tool cover -html=cover.out -o cover.html
 ```
 
-Покрытие тестами **~55%** по проекту (пакет `ledger/ledger` — около **60%**, HTTP-слой `gateway/internal/api` — около **90%**; `main.go` в модулях не покрываются). Файл `cover.html` в git не добавляется.
+Покрытие **~55%** (зависит от окружения; unit-тесты валидации не требуют БД).
 
-## Gateway
-
-HTTP-сервер на порту `8080`. Использует пакет `ledger` из этого репозитория (in-memory хранилище). Все ответы — JSON с заголовком `Content-Type: application/json; charset=utf-8`.
-
-```powershell
-cd gateway
-go run .
-```
-
-### Эндпоинты
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| `POST` | `/api/transactions` | Создать транзакцию |
-| `GET` | `/api/transactions` | Список транзакций |
-| `POST` | `/api/budgets` | Создать или обновить бюджет категории |
-| `GET` | `/api/budgets` | Список бюджетов |
-
-Ошибки возвращаются в формате `{"error":"..."}` со статусами `400` (валидация), `409` (превышение бюджета), `500` (внутренняя ошибка).
-
-### Примеры cURL
-
-Создать транзакцию:
-
-```powershell
-curl.exe -X POST http://localhost:8080/api/transactions `
-  -H "Content-Type: application/json" `
-  -d "{\"amount\":450,\"category\":\"food\",\"description\":\"lunch\",\"date\":\"2025-09-10\"}"
-```
-
-Список транзакций:
-
-```powershell
-curl.exe http://localhost:8080/api/transactions
-```
-
-Задать бюджет:
-
-```powershell
-curl.exe -X POST http://localhost:8080/api/budgets `
-  -H "Content-Type: application/json" `
-  -d "{\"category\":\"food\",\"limit\":5000}"
-```
-
-Список бюджетов:
-
-```powershell
-curl.exe http://localhost:8080/api/budgets
-```
-
-Превышение бюджета (пример — сумма больше лимита категории):
-
-```powershell
-curl.exe -X POST http://localhost:8080/api/transactions `
-  -H "Content-Type: application/json" `
-  -d "{\"amount\":10000,\"category\":\"food\",\"description\":\"too much\",\"date\":\"2025-09-10\"}"
-```
-
-Ожидается `409 Conflict` и `{"error":"budget exceeded"}`.
-
-## Ledger
-
-Сервис хранит транзакции и бюджеты по категориям в памяти.
-
-- Бюджеты загружаются из `ledger/budgets.json` (JSON-массив объектов с полями `Category` и `Limit`).
-- `AddTransaction` проверяет лимит для категорий, для которых задан бюджет; при превышении возвращает ошибку `budget exceeded` и не сохраняет транзакцию.
-- `SetBudget` добавляет или обновляет бюджет категории.
+## Ledger (демо)
 
 ```powershell
 cd ledger
 go run .
 ```
 
-Ожидаемое поведение при старте:
-
-1. Сообщение о загрузке бюджетов из `budgets.json`.
-2. Успешное добавление транзакций в пределах лимита (`Food within budget`, `Transport within budget`, и т.д.).
-3. Отказ для транзакции `Food over budget` с сообщением `budget exceeded`.
-4. Успех для категории без бюджета (`Uncategorized`).
-5. Ожидаемая ошибка для транзакции с нулевой суммой.
-6. Итоговый список транзакций **без** отклонённой записи по категории `food` на 4000.
-
-Формат `budgets.json`:
-
-```json
-[
-  {"Category": "food", "Limit": 5000},
-  {"Category": "transport", "Limit": 3000}
-]
-```
+Загружает `budgets.json`, демонстрирует добавление транзакций с проверкой лимитов в PostgreSQL.

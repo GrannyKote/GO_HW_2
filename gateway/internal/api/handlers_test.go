@@ -2,10 +2,12 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,6 +15,26 @@ import (
 )
 
 const jsonContentTypeHeader = "application/json; charset=utf-8"
+
+var integrationReady bool
+
+func TestMain(m *testing.M) {
+	if err := ledger.Init(context.Background()); err != nil {
+		integrationReady = false
+	} else {
+		integrationReady = true
+	}
+	code := m.Run()
+	ledger.Close()
+	os.Exit(code)
+}
+
+func requireIntegration(t *testing.T) {
+	t.Helper()
+	if !integrationReady {
+		t.Skip("DATABASE_URL/REDIS not available — skipping HTTP integration tests")
+	}
+}
 
 func newTestServer() *httptest.Server {
 	h := NewHandler()
@@ -38,8 +60,11 @@ func decodeError(t *testing.T, body io.Reader) string {
 func TestBudgetAPI(t *testing.T) {
 	t.Run("POST /api/budgets", func(t *testing.T) {
 		t.Run("ok", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
+			requireIntegration(t)
+			if err := ledger.Reset(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ledger.Reset() })
 
 			srv := newTestServer()
 			t.Cleanup(srv.Close)
@@ -88,8 +113,11 @@ func TestBudgetAPI(t *testing.T) {
 		})
 
 		t.Run("bad_limit", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
+			requireIntegration(t)
+			if err := ledger.Reset(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ledger.Reset() })
 
 			srv := newTestServer()
 			t.Cleanup(srv.Close)
@@ -111,8 +139,11 @@ func TestBudgetAPI(t *testing.T) {
 		})
 
 		t.Run("bad_json", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
+			requireIntegration(t)
+			if err := ledger.Reset(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ledger.Reset() })
 
 			srv := newTestServer()
 			t.Cleanup(srv.Close)
@@ -137,8 +168,11 @@ func TestBudgetAPI(t *testing.T) {
 func TestTransactionAPI(t *testing.T) {
 	t.Run("flow", func(t *testing.T) {
 		t.Run("ok", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
+			requireIntegration(t)
+			if err := ledger.Reset(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ledger.Reset() })
 
 			srv := newTestServer()
 			t.Cleanup(srv.Close)
@@ -169,7 +203,7 @@ func TestTransactionAPI(t *testing.T) {
 			if err := json.NewDecoder(txResp.Body).Decode(&created); err != nil {
 				t.Fatalf("decode: %v", err)
 			}
-			if created.ID != 1 || created.Amount != 450 || created.Category != "food" {
+			if created.ID < 1 || created.Amount != 450 || created.Category != "food" {
 				t.Fatalf("unexpected transaction: %+v", created)
 			}
 			if created.Date != "2025-09-10" {
@@ -197,8 +231,11 @@ func TestTransactionAPI(t *testing.T) {
 		})
 
 		t.Run("exceeded", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
+			requireIntegration(t)
+			if err := ledger.Reset(); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ledger.Reset() })
 
 			srv := newTestServer()
 			t.Cleanup(srv.Close)
@@ -223,18 +260,17 @@ func TestTransactionAPI(t *testing.T) {
 				t.Fatalf("error: want %q, got %q", "budget exceeded", got)
 			}
 
-			list := ledger.ListTransactions()
+			list, err := ledger.ListTransactions()
+			if err != nil {
+				t.Fatal(err)
+			}
 			if len(list) != 1 {
 				t.Fatalf("transaction count after reject: want 1, got %d", len(list))
 			}
 		})
 
 		t.Run("bad_json", func(t *testing.T) {
-			ledger.Reset()
-			t.Cleanup(ledger.Reset)
-
-			srv := newTestServer()
-			t.Cleanup(srv.Close)
+			requireIntegration(t)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/transactions", bytes.NewReader([]byte("{")))
 			req.Header.Set("Content-Type", jsonContentTypeHeader)

@@ -1,6 +1,8 @@
 package ledger_test
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -100,35 +102,54 @@ func TestBudgetValidate(t *testing.T) {
 }
 
 func TestAddTransactionBudgetLimits(t *testing.T) {
-	ledger.Reset()
-	t.Cleanup(ledger.Reset)
+	requireDB(t)
+	if err := ledger.Reset(); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	t.Cleanup(func() { _ = ledger.Reset() })
 
 	if err := ledger.SetBudget(ledger.Budget{Category: "еда", Limit: 5000}); err != nil {
 		t.Fatalf("SetBudget: %v", err)
 	}
 
-	before := len(ledger.ListTransactions())
+	before, err := ledger.ListTransactions()
+	if err != nil {
+		t.Fatalf("ListTransactions: %v", err)
+	}
 
 	txOK := ledger.Transaction{
 		Amount: 3000, Category: "еда", Description: "groceries", Date: "2025-09-10",
 	}
-	if err := ledger.AddTransaction(txOK); err != nil {
+	if _, err := ledger.AddTransaction(txOK); err != nil {
 		t.Fatalf("AddTransaction within limit: %v", err)
 	}
 
 	txOver := ledger.Transaction{
 		Amount: 2500, Category: "еда", Description: "would exceed", Date: "2025-09-11",
 	}
-	err := ledger.AddTransaction(txOver)
+	_, err = ledger.AddTransaction(txOver)
 	if err == nil {
 		t.Fatal("expected budget exceeded error, got nil")
 	}
-	if !strings.Contains(err.Error(), "budget exceeded") {
+	if !errors.Is(err, ledger.ErrBudgetExceeded) && !strings.Contains(err.Error(), "budget exceeded") {
 		t.Fatalf("expected budget exceeded, got %q", err.Error())
 	}
 
-	after := ledger.ListTransactions()
-	if len(after) != before+1 {
-		t.Fatalf("transaction count: want %d, got %d", before+1, len(after))
+	after, err := ledger.ListTransactions()
+	if err != nil {
+		t.Fatalf("ListTransactions: %v", err)
+	}
+	if len(after) != len(before)+1 {
+		t.Fatalf("transaction count: want %d, got %d", len(before)+1, len(after))
+	}
+}
+
+func requireDB(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping DB test in short mode")
+	}
+	if err := ledger.Init(context.Background()); err != nil {
+		t.Skipf("database/redis not available: %v", err)
 	}
 }

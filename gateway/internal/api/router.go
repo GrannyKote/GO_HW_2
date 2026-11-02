@@ -13,6 +13,7 @@ func NewRouter(h *Handler) http.Handler {
 		r.Get("/transactions", h.ListTransactions)
 		r.Post("/budgets", h.SetBudget)
 		r.Get("/budgets", h.ListBudgets)
+		r.Get("/reports/summary", h.ReportSummary)
 	})
 	return LoggingMiddleware(r)
 }

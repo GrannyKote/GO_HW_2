@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"ledger/ledger"
@@ -26,8 +27,9 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ledger.AddTransaction(tx); err != nil {
-		if err.Error() == "budget exceeded" {
+	created, err := ledger.AddTransaction(tx)
+	if err != nil {
+		if errors.Is(err, ledger.ErrBudgetExceeded) {
 			writeError(w, http.StatusConflict, "budget exceeded")
 			return
 		}
@@ -35,13 +37,15 @@ func (h *Handler) CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	all := ledger.ListTransactions()
-	created := all[len(all)-1]
 	writeJSON(w, http.StatusCreated, ToTransactionResponse(created))
 }
 
 func (h *Handler) ListTransactions(w http.ResponseWriter, r *http.Request) {
-	items := ledger.ListTransactions()
+	items, err := ledger.ListTransactions()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
 	out := make([]TransactionResponse, 0, len(items))
 	for _, tx := range items {
 		out = append(out, ToTransactionResponse(tx))
@@ -71,10 +75,30 @@ func (h *Handler) SetBudget(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListBudgets(w http.ResponseWriter, r *http.Request) {
-	items := ledger.ListBudgets()
+	items, err := ledger.ListBudgets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
 	out := make([]BudgetResponse, 0, len(items))
 	for _, b := range items {
 		out = append(out, ToBudgetResponse(b))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) ReportSummary(w http.ResponseWriter, r *http.Request) {
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	if err := ledger.ValidateReportRange(from, to); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	summary, err := ledger.GetReportSummary(r.Context(), from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
