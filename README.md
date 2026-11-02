@@ -8,20 +8,63 @@
 
 ## Gateway
 
-HTTP-сервер на порту `8080`.
+HTTP-сервер на порту `8080`. Использует пакет `ledger` из этого репозитория (in-memory хранилище). Все ответы — JSON с заголовком `Content-Type: application/json; charset=utf-8`.
 
 ```powershell
 cd gateway
 go run .
 ```
 
-Проверка:
+### Эндпоинты
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/transactions` | Создать транзакцию |
+| `GET` | `/api/transactions` | Список транзакций |
+| `POST` | `/api/budgets` | Создать или обновить бюджет категории |
+| `GET` | `/api/budgets` | Список бюджетов |
+
+Ошибки возвращаются в формате `{"error":"..."}` со статусами `400` (валидация), `409` (превышение бюджета), `500` (внутренняя ошибка).
+
+### Примеры cURL
+
+Создать транзакцию:
 
 ```powershell
-curl.exe http://localhost:8080/ping
+curl.exe -X POST http://localhost:8080/api/transactions `
+  -H "Content-Type: application/json" `
+  -d "{\"amount\":450,\"category\":\"food\",\"description\":\"lunch\",\"date\":\"2025-09-10\"}"
 ```
 
-Ожидается ответ `pong` и статус `200 OK`.
+Список транзакций:
+
+```powershell
+curl.exe http://localhost:8080/api/transactions
+```
+
+Задать бюджет:
+
+```powershell
+curl.exe -X POST http://localhost:8080/api/budgets `
+  -H "Content-Type: application/json" `
+  -d "{\"category\":\"food\",\"limit\":5000}"
+```
+
+Список бюджетов:
+
+```powershell
+curl.exe http://localhost:8080/api/budgets
+```
+
+Превышение бюджета (пример — сумма больше лимита категории):
+
+```powershell
+curl.exe -X POST http://localhost:8080/api/transactions `
+  -H "Content-Type: application/json" `
+  -d "{\"amount\":10000,\"category\":\"food\",\"description\":\"too much\",\"date\":\"2025-09-10\"}"
+```
+
+Ожидается `409 Conflict` и `{"error":"budget exceeded"}`.
 
 ## Ledger
 

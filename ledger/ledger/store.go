@@ -93,6 +93,15 @@ func ListTransactions() []Transaction {
 	return out
 }
 
+// ListBudgets returns all budgets currently in storage.
+func ListBudgets() []Budget {
+	out := make([]Budget, 0, len(budgets))
+	for _, b := range budgets {
+		out = append(out, b)
+	}
+	return out
+}
+
 // String formats a transaction for console output.
 func (t Transaction) String() string {
 	return fmt.Sprintf("ID=%d Amount=%.2f Category=%q Description=%q Date=%s",
