@@ -31,11 +31,12 @@ var (
 )
 
 // SetBudget adds or updates a budget for the given category.
-func SetBudget(b Budget) {
-	if b.Category == "" {
-		return
+func SetBudget(b Budget) error {
+	if err := b.Validate(); err != nil {
+		return err
 	}
 	budgets[b.Category] = b
+	return nil
 }
 
 // LoadBudgets reads a JSON array of budgets and stores them via SetBudget.
@@ -52,13 +53,9 @@ func LoadBudgets(r io.Reader) error {
 		return fmt.Errorf("parse budgets JSON: %w", err)
 	}
 	for _, b := range items {
-		if b.Category == "" {
-			return errors.New("budget entry missing category")
+		if err := SetBudget(b); err != nil {
+			return fmt.Errorf("budget %q: %w", b.Category, err)
 		}
-		if b.Limit < 0 {
-			return fmt.Errorf("budget for category %q has negative limit", b.Category)
-		}
-		SetBudget(b)
 	}
 	return nil
 }
@@ -74,10 +71,10 @@ func sumByCategory(category string) float64 {
 }
 
 // AddTransaction appends a transaction to in-memory storage.
-// Returns an error if Amount is zero or if the transaction would exceed the category budget.
+// Returns an error if validation fails or the transaction would exceed the category budget.
 func AddTransaction(tx Transaction) error {
-	if tx.Amount == 0 {
-		return errors.New("transaction amount must not be zero")
+	if err := tx.Validate(); err != nil {
+		return err
 	}
 	if b, ok := budgets[tx.Category]; ok {
 		if sumByCategory(tx.Category)+tx.Amount > b.Limit {

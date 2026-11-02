@@ -23,8 +23,26 @@ func main() {
 	}
 	fmt.Println("Budgets loaded from budgets.json")
 
-	ledger.SetBudget(ledger.Budget{Category: "transport", Limit: 2500})
+	if err := ledger.SetBudget(ledger.Budget{Category: "transport", Limit: 2500}); err != nil {
+		log.Fatalf("set budget: %v", err)
+	}
 	fmt.Println("SetBudget: transport limit updated to 2500")
+
+	demoValidate := func(label string, v ledger.Validatable) {
+		if err := ledger.CheckValid(v); err != nil {
+			fmt.Printf("CheckValid %s: invalid — %v\n", label, err)
+			return
+		}
+		fmt.Printf("CheckValid %s: valid\n", label)
+	}
+	demoValidate("good transaction", ledger.Transaction{
+		Amount: 100, Category: "food", Description: "demo", Date: "2026-10-01",
+	})
+	demoValidate("bad transaction", ledger.Transaction{
+		Amount: -5, Category: "food", Description: "demo", Date: "2026-10-01",
+	})
+	demoValidate("good budget", ledger.Budget{Category: "health", Limit: 1000})
+	demoValidate("bad budget", ledger.Budget{Category: "", Limit: 500})
 
 	tryAdd := func(label string, tx ledger.Transaction) {
 		if err := ledger.AddTransaction(tx); err != nil {
