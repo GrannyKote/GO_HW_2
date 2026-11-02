@@ -1,0 +1,6 @@
+.gocache/
+.gotmp/
+cover.out
+cover.html
+cover_*.out
+*.exe

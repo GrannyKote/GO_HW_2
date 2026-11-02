@@ -25,10 +25,16 @@ type Budget struct {
 var (
 	transactions []Transaction
 	budgets      = map[string]Budget{
-		"food": {Category: "food", Limit: 5000},
+		"food":      {Category: "food", Limit: 5000},
 		"transport": {Category: "transport", Limit: 3000},
 	}
 )
+
+// Reset clears in-memory transactions and budgets. Intended for tests.
+func Reset() {
+	transactions = nil
+	budgets = make(map[string]Budget)
+}
 
 // SetBudget adds or updates a budget for the given category.
 func SetBudget(b Budget) error {

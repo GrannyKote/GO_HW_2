@@ -6,6 +6,19 @@
 
 - Go 1.21+ (или любая актуальная версия с поддержкой modules)
 
+## Тесты
+
+В корне репозитория настроен `go.work` для модулей `gateway` и `ledger`. Unit-тесты домена — `ledger/ledger/ledger_test.go`, интеграционные HTTP-тесты — `gateway/internal/api/handlers_test.go`. Перед тестами состояние in-memory сбрасывается через `ledger.Reset()`.
+
+```powershell
+cd D:\Учеба\GO\GO_HW_2
+go test ./gateway/internal/api ./ledger/ledger -cover -coverprofile=cover.out
+go tool cover -func=cover.out
+go tool cover -html=cover.out -o cover.html
+```
+
+Покрытие тестами **~55%** по проекту (пакет `ledger/ledger` — около **60%**, HTTP-слой `gateway/internal/api` — около **90%**; `main.go` в модулях не покрываются). Файл `cover.html` в git не добавляется.
+
 ## Gateway
 
 HTTP-сервер на порту `8080`. Использует пакет `ledger` из этого репозитория (in-memory хранилище). Все ответы — JSON с заголовком `Content-Type: application/json; charset=utf-8`.
